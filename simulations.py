@@ -7,7 +7,7 @@ SIGMA = 3
 
 def dynamics(setting, strategy = "None", model = "linear_gaussian", T = 100, perturbation = 0.1, xi_seq = None, theta_range = (2, 6), ucb_partition = 10):
     assert setting in ["static", "bounded", "unbounded-towards", "unbounded-away-slow", "unbounded-away-fast"]
-    assert strategy in ["None", "forced-exploration-perturb", "forced-exploration-ucb", "kalman-filter"]
+    assert strategy in ["None", "forced-exploration-perturb", "forced-exploration-ucb", "forced-explore-bayesian"]
     assert model in ["linear_gaussian", "demand_learning"]
     if strategy != "None":
         assert setting == "static"
@@ -22,6 +22,8 @@ def dynamics(setting, strategy = "None", model = "linear_gaussian", T = 100, per
     a = 1
     K = np.exp(SIGMA ** 2 / 2)
     c = 0.75
+    mu = (theta_range[0] + theta_range[1]) / 2
+    tau = (mu - theta_range[0]) / 2
     theta_lst = []
     theta_est_lst = []
     delta_lst = []
@@ -54,6 +56,11 @@ def dynamics(setting, strategy = "None", model = "linear_gaussian", T = 100, per
             ## Estimate \theta
             if model == "linear_gaussian":
                 theta_est = xy / x_sq
+                if strategy == "forced-explore-bayesian":
+                    tau_next_sq = 1 / (x_lst[-1] ** 2 / SIGMA ** 2 + 1 / tau ** 2)
+                    mu = tau_next_sq * (x_lst[-1] * y_lst[-1] / SIGMA ** 2 + mu / tau ** 2)
+                    tau = tau_next_sq ** 0.5
+                    theta_est = mu
             elif model == "demand_learning":
                 theta_est = max(theta_range[0], xay / x_sq)
                 if strategy == "forced-exploration-ucb":
@@ -61,10 +68,18 @@ def dynamics(setting, strategy = "None", model = "linear_gaussian", T = 100, per
                     ucb_lo = ucb_arms[arm]
                     ucb_hi = ucb_arms[arm + 1]
                     theta_est = np.random.uniform(low = ucb_lo, high = ucb_hi)
+                elif strategy == "forced-explore-bayesian":
+                    tau_next_sq = 1 / (x_lst[-1] ** 2 / SIGMA ** 2 + 1 / tau ** 2)
+                    mu = tau_next_sq * (-x_lst[-1] * (y_lst[-1] - a) / SIGMA ** 2 + mu / tau ** 2)
+                    tau = tau_next_sq ** 0.5
+                    theta_est = mu
             theta_est_lst.append(theta_est)
             delta = abs(1 - theta_est / theta)
             delta_lst.append(delta)
             theta_lst.append(theta)
+            if strategy == "forced-explore-bayesian":
+                theta_est = np.random.normal(mu, tau)
+                theta_est = min(max(theta_est, theta_range[0]), theta_range[1])
         ## Compute dynamics
         if t == 0:
             if model == "linear_gaussian":
@@ -145,11 +160,11 @@ def sim_batch(setting, strategy, model, T = 100, n_sample = 100):
 setting_params_dict = {
     "model": {
         "demand_learning": [
-            ("static", "None"), ("static", "forced-exploration-perturb"), ("static", "forced-exploration-ucb"),
+            ("static", "None"), ("static", "forced-exploration-perturb"), ("static", "forced-exploration-ucb"), ("static", "forced-explore-bayesian"),
             ("bounded", "None"), #("unbounded-towards", "None"), ("unbounded-away-slow", "None"), ("unbounded-away-fast", "None")
         ],
         "linear_gaussian": [
-            ("static", "None"), ("static", "forced-exploration-perturb"),
+            ("static", "None"), ("static", "forced-exploration-perturb"), ("static", "forced-explore-bayesian"),
             ("bounded", "None"), ("unbounded-towards", "None"), ("unbounded-away-slow", "None"), ("unbounded-away-fast", "None")
         ]
     }
