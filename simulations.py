@@ -7,7 +7,7 @@ SIGMA = 3
 
 def dynamics(setting, strategy = "None", model = "linear_gaussian", T = 100, perturbation = 0.1, xi_seq = None, theta_range = (2, 6), ucb_partition = 10):
     assert setting in ["static", "bounded", "unbounded-towards", "unbounded-away-slow", "unbounded-away-fast"]
-    assert strategy in ["None", "forced-exploration-perturb", "forced-exploration-ucb", "forced-explore-bayesian"]
+    assert strategy in ["None", "forced-exploration-perturb", "forced-exploration-ucb", "forced-explore-bayesian", "robust-adaptive-ci"]
     assert model in ["linear_gaussian", "demand_learning"]
     if strategy != "None":
         assert setting == "static"
@@ -34,6 +34,7 @@ def dynamics(setting, strategy = "None", model = "linear_gaussian", T = 100, per
     ucb_conf = np.zeros(ucb_partition) + np.inf
     total_regret = 0
     total_regret_lst = []
+    theta_lo, theta_hi = theta_range
     for t in range(T + 1):
         ## Compute \theta
         if setting == "static":
@@ -73,6 +74,10 @@ def dynamics(setting, strategy = "None", model = "linear_gaussian", T = 100, per
                     mu = tau_next_sq * (-x_lst[-1] * (y_lst[-1] - a) / SIGMA ** 2 + mu / tau ** 2)
                     tau = tau_next_sq ** 0.5
                     theta_est = mu
+            theta_sd = SIGMA / ((x_sq / (t + 1)) ** 0.5)
+            theta_coef = 1.96
+            theta_lo = max(theta_range[0], theta_est - theta_coef * theta_sd)
+            theta_hi = min(theta_range[1], theta_est + theta_coef * theta_sd)
             theta_est_lst.append(theta_est)
             delta = abs(1 - theta_est / theta)
             delta_lst.append(delta)
@@ -108,6 +113,8 @@ def dynamics(setting, strategy = "None", model = "linear_gaussian", T = 100, per
                     ucb_conf[arm] = ucb_cum_profit[arm] / ucb_freq[arm] + (2 * np.log(t + 1) / ucb_freq[arm]) ** 0.5
                 elif strategy == "kalman-filter":
                     pass
+                elif strategy == "robust-adaptive-ci":
+                    x = np.log(c) - np.log(1 - 1/theta_hi)
                 profit = K * (np.exp(x) - c) * np.exp(-theta * x)
                 regret = profit_opt - profit
                 total_regret += regret
@@ -160,7 +167,7 @@ def sim_batch(setting, strategy, model, T = 100, n_sample = 100):
 setting_params_dict = {
     "model": {
         "demand_learning": [
-            ("static", "None"), ("static", "forced-exploration-perturb"), ("static", "forced-exploration-ucb"), ("static", "forced-explore-bayesian"),
+            ("static", "None"), ("static", "forced-exploration-perturb"), ("static", "forced-exploration-ucb"), ("static", "forced-explore-bayesian"), ("static", "robust-adaptive-ci"),
             ("bounded", "None"), #("unbounded-towards", "None"), ("unbounded-away-slow", "None"), ("unbounded-away-fast", "None")
         ],
         "linear_gaussian": [
@@ -194,7 +201,7 @@ for model in setting_params_dict["model"]:
             for n in range(total_regret_mat.shape[0]):
                 plt.plot(total_regret_mat[n,:], alpha = 0.5)
             plt.xlabel("t")
-            plt.ylabel("Total Regret$")
+            plt.ylabel("Total Regret")
             plt.savefig(f"Plots/{model}_{setting}_{strategy}_regret.png")
             plt.clf()
             plt.close()
