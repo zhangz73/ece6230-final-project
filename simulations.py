@@ -43,7 +43,7 @@ def dynamics(setting, strategy = "None", model = "linear_gaussian", T = 100, per
             if t == 0:
                 theta = 2.5
             else:
-                if (t // 2000) % 2 == 0:
+                if (t // 500) % 2 == 0:
                     theta += 0.001
                 else:
                     theta -= 0.001
@@ -51,8 +51,12 @@ def dynamics(setting, strategy = "None", model = "linear_gaussian", T = 100, per
             theta += xi_seq[t]
         elif setting == "unbounded-away-slow":
             theta = 1 + (8 * np.log(t + 2)) ** 0.5
+            if model == "demand_learning":
+                theta += 3
         else: # setting == "unbounded-away-fast":
             theta = 1 + 2 * (t + 1) ** 0.5
+            if model == "demand_learning":
+                theta += 3
         if t > 0:
             ## Estimate \theta
             if model == "linear_gaussian":
@@ -168,7 +172,7 @@ setting_params_dict = {
     "model": {
         "demand_learning": [
             ("static", "None"), ("static", "forced-exploration-perturb"), ("static", "forced-exploration-ucb"), ("static", "forced-explore-bayesian"), ("static", "robust-adaptive-ci"),
-            ("bounded", "None"), #("unbounded-towards", "None"), ("unbounded-away-slow", "None"), ("unbounded-away-fast", "None")
+            ("bounded", "None"), ("unbounded-towards", "None"), ("unbounded-away-slow", "None"), ("unbounded-away-fast", "None")
         ],
         "linear_gaussian": [
             ("static", "None"), ("static", "forced-exploration-perturb"), ("static", "forced-explore-bayesian"),
@@ -178,12 +182,19 @@ setting_params_dict = {
 }
 
 for model in setting_params_dict["model"]:
+    if model == "linear_gaussian":
+        incomplete = 1
+    else:
+        incomplete = 4
+    eps = 0.5
     for setting, strategy in setting_params_dict["model"][model]:
         np.random.seed(6230)
         print("Model", model, "Setting:", setting, "Strategy:", strategy)
         theta_mat, theta_est_mat, delta_mat, total_regret_mat = sim_batch(setting, strategy = strategy, model = model, T = 10000, n_sample = 1000)
+        incomplete_rate = np.mean(np.abs(theta_est_mat[:,-1] - incomplete) < eps)
         plt.hist(theta_est_mat[:,-1])
         plt.xlim(left = 0)
+        plt.title(f"% Incomplete Learning: {round(incomplete_rate * 100, 2)}%")
         plt.savefig(f"Plots/{model}_{setting}_{strategy}_hist.png")
         plt.clf()
         plt.close()
